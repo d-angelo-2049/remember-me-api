@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+  firebase:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - .:/remember-me-api
+    ports:
+      - 8081:8081 # Emulator Suite UI
+      - 5002:5002 # Firebase Hosting
+      - 5001:5001 # Clound Functions
+      - 9000:9000 # Realtime Database
+      - 8082:8082 # Cloud Firestore
+      - 8085:8085 # Cloud Pub/Sub
+    command: /bin/bash -c "/bin/bash"
+    tty: true
