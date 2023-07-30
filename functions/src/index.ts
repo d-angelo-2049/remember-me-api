@@ -31,108 +31,135 @@ const validatePostFoodParamsSchema = (params: any) => {
   return hasName && hasExpiration && hasLocation && hasImageString;
 };
 
-export const postFood = functions.https.onCall(async (data: { name: any; expiration: any; location: any; imageString: any; status: any; }, context: any) => {
-  if (!validatePostFoodParamsSchema(data)) {
-    throw new functions.https.HttpsError(
-      "invalid-argument",
-      "invalid paramteres"
-    );
+export const postFood = functions.https.onCall(
+  async (
+    data: {
+      name: any;
+      expiration: any;
+      location: any;
+      imageString: any;
+      status: any;
+    },
+    context: any
+  ) => {
+    if (!validatePostFoodParamsSchema(data)) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "invalid paramteres"
+      );
+    }
+
+    const {name, expiration, location, imageString, status} = data;
+    const db = admin.firestore();
+    return await db
+      .collection("foods")
+      .add({
+        name: name,
+        expiration: expiration,
+        location: location,
+        imageString: imageString,
+        status: status,
+      })
+      .then((documentReference: { id: any }) => {
+        logger.info(`Added document with name: ${documentReference.id}`);
+        return {documentId: documentReference.id};
+      });
   }
+);
 
-  const { name, expiration, location, imageString, status } = data;
-  const db = admin.firestore();
-  return await db
-    .collection("foods")
-    .add({
-      name: name,
-      expiration: expiration,
-      location: location,
-      imageString: imageString,
-      status: status,
-    })
-    .then((documentReference: { id: any; }) => {
-      logger.info(`Added document with name: ${documentReference.id}`);
-      return { documentId: documentReference.id };
-    });
-});
+export const readFood = functions.https.onCall(
+  async (data: { documentId: any }, context: any) => {
+    const hasDocumentId = "documentId" in data;
 
-export const readFood = functions.https.onCall(async (data: { documentId: any; }, context: any) => {
-  const hasDocumentId = "documentId" in data;
+    if (!hasDocumentId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "invalid paramteres"
+      );
+    }
 
-  if (!hasDocumentId) {
-    throw new functions.https.HttpsError(
-      "invalid-argument",
-      "invalid paramteres"
-    );
-  }
-
-  const db = admin.firestore();
-  return await db
-    .collection("foods")
-    .doc(data.documentId)
-    .get()
-    .then((documentSnapshot: { exists: any; data: () => any; }) => {
-      if (!documentSnapshot.exists) {
-        logger.info("No such document!");
-        throw new functions.https.HttpsError("not-found", "resource not found");
-      }
-      logger.info(`read document data: ${documentSnapshot.data()}`);
-      return { documentId: data.documentId, data: documentSnapshot.data() };
-    });
-});
-
-export const updateFood = functions.https.onCall(async (data: { documentId: any; status: any; }, context: any) => {
-  const hasDocumentId = "documentId" in data;
-
-  if (!hasDocumentId) {
-    throw new functions.https.HttpsError(
-      "invalid-argument",
-      "invalid paramteres"
-    );
-  }
-  const db = admin.firestore();
-
-  await db
-    .collection("foods")
-    .doc(data.documentId)
-    .get()
-    .then((documentSnapshot: { exists: any; }) => {
-      if (!documentSnapshot.exists) {
-        logger.info("No such document!");
-        throw new functions.https.HttpsError("not-found", "resource not found");
-      }
-    });
-
-  try {
+    const db = admin.firestore();
     return await db
       .collection("foods")
       .doc(data.documentId)
-      .update({
-        status: data.status,
-      })
-      .then((writeResult: { writeTime: { toDate: () => any; }; }) => {
-        logger.info(
-          `updated document, write time: ${writeResult.writeTime.toDate()}`
-        );
-        return "success";
+      .get()
+      .then((documentSnapshot: { exists: any; data: () => any }) => {
+        if (!documentSnapshot.exists) {
+          logger.info("No such document!");
+          throw new functions.https.HttpsError(
+            "not-found",
+            "resource not found"
+          );
+        }
+        logger.info(`read document data: ${documentSnapshot.data()}`);
+        return {documentId: data.documentId, data: documentSnapshot.data()};
       });
-  } catch (e) {
-    throw new functions.https.HttpsError("unknown", "failed to update data", e);
   }
-});
+);
 
-export const dangerList = functions.https.onCall(async (data: any, context: any) => {
-  const db = admin.firestore();
+export const updateFood = functions.https.onCall(
+  async (data: { documentId: any; status: any }, context: any) => {
+    const hasDocumentId = "documentId" in data;
 
-  return await db
-    .collection("foods")
-    .get()
-    .then((querySnapshot: { docs: any[]; }) => {
-      // TODO: 過去5日間かつ未来一週間で期限を迎える食品を一覧化
-      // そのフィルタリングはFlutter のtimestamp の使用によって実装が変わるはずなので
-      // 現時点では collenction 内のすべての food を返却する
-      return querySnapshot.docs.map((doc) => {
-        return { documentId: doc.id, data: doc.data() };
+    if (!hasDocumentId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "invalid paramteres"
+      );
+    }
+    const db = admin.firestore();
+
+    await db
+      .collection("foods")
+      .doc(data.documentId)
+      .get()
+      .then((documentSnapshot: { exists: any }) => {
+        if (!documentSnapshot.exists) {
+          logger.info("No such document!");
+          throw new functions.https.HttpsError(
+            "not-found",
+            "resource not found"
+          );
+        }
       });
-    });
-});
+
+    try {
+      return await db
+        .collection("foods")
+        .doc(data.documentId)
+        .update({
+          status: data.status,
+        })
+        .then((writeResult: { writeTime: { toDate: () => any } }) => {
+          logger.info(
+            `updated document, write time: ${writeResult.writeTime.toDate()}`
+          );
+          return "success";
+        });
+    } catch (e) {
+      throw new functions.https.HttpsError(
+        "unknown",
+        "failed to update data",
+        e
+      );
+    }
+  }
+);
+
+export const dangerList = functions.https.onCall(
+  async (data: any, context: any) => {
+    const db = admin.firestore();
+
+    return await db
+      .collection("foods")
+      .get()
+      .then((querySnapshot: { docs: any[] }) => {
+        // TODO: 過去5日間かつ未来一週間で期限を迎える食品を一覧化
+        // そのフィルタリングはFlutter のtimestamp の使用によって実装が変わるはずなので
+        // 現時点では collenction 内のすべての food を返却する
+        return querySnapshot.docs.map((doc) => {
+          return {documentId: doc.id, data: doc.data()};
+        });
+      });
+  }
+);
