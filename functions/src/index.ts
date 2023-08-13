@@ -164,13 +164,13 @@ export const dangerList = functions.https.onCall(
       .collection("foods")
       .get()
       .then((querySnapshot: { docs: any[] }) => {
-        // 　過去5日間かつ未来一週間で期限を迎える食品を返却
-        return querySnapshot.docs
-        .filter((doc) => {
-          const expirationDate = new Date(doc.data().expiration.replace(/(.*)\((.*)\)/, '$1'));
-          return expirationDate >= fiveDaysAgo && expirationDate <= oneWeekAhead;
-        })
-        .map((doc) => {
+        // 過去5日間かつ未来一週間で期限を迎える食品を返却
+        return querySnapshot.docs.filter((doc) => {
+          const expirationDate = new Date(
+            doc.data().expiration.replace(/(.*)\((.*)\)/, "$1"));
+          return expirationDate >= fiveDaysAgo &&
+            expirationDate <= oneWeekAhead;
+        }).map((doc) => {
           return {documentId: doc.id, data: doc.data()};
         }).sort((a, b) => {
           // ascending order
