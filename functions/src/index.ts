@@ -159,6 +159,11 @@ export const dangerList = functions.https.onCall(
         // 現時点では collenction 内のすべての food を返却する
         return querySnapshot.docs.map((doc) => {
           return {documentId: doc.id, data: doc.data()};
+        })
+        .sort((a, b) => {
+          const dateA = new Date(a.data.expiration.replace(/(.*)\((.*)\)/, '$1'));
+          const dateB = new Date(b.data.expiration.replace(/(.*)\((.*)\)/, '$1'));
+          return dateA.getTime() - dateB.getTime();
         });
       });
   }
