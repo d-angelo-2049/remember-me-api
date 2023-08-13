@@ -150,16 +150,30 @@ export const dangerList = functions.https.onCall(
   async (data: any, context: any) => {
     const db = admin.firestore();
 
+    const now = new Date();
+    const jstOffset = 9 * 60 * 60 * 1000; // JSTオフセット（UTC+9）
+    const currentJST = new Date(now.getTime() + jstOffset);
+
+    // 過去5日間と未来1週間の範囲を計算
+    const fiveDaysAgo = new Date(currentJST);
+    fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+    const oneWeekAhead = new Date(currentJST);
+    oneWeekAhead.setDate(oneWeekAhead.getDate() + 7);
+
     return await db
       .collection("foods")
       .get()
       .then((querySnapshot: { docs: any[] }) => {
-        // TODO: 過去5日間かつ未来一週間で期限を迎える食品を一覧化
-        // そのフィルタリングはFlutter のtimestamp の使用によって実装が変わるはずなので
-        // 現時点では collenction 内のすべての food を返却する
-        return querySnapshot.docs.map((doc) => {
+        // 　過去5日間かつ未来一週間で期限を迎える食品を返却
+        return querySnapshot.docs
+        .filter((doc) => {
+          const expirationDate = new Date(doc.data().expiration.replace(/(.*)\((.*)\)/, '$1'));
+          return expirationDate >= fiveDaysAgo && expirationDate <= oneWeekAhead;
+        })
+        .map((doc) => {
           return {documentId: doc.id, data: doc.data()};
         }).sort((a, b) => {
+          // ascending order
           const dateA = new Date(
             a.data.expiration.replace(/(.*)\((.*)\)/, "$1"));
           const dateB = new Date(
