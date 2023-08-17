@@ -49,7 +49,7 @@ export const postFood = functions.https.onCall(
       );
     }
 
-    const { name, expiration, location, imageString, status } = data;
+    const {name, expiration, location, imageString, status} = data;
     const db = admin.firestore();
     return await db
       .collection("foods")
@@ -62,7 +62,7 @@ export const postFood = functions.https.onCall(
       })
       .then((documentReference: { id: any }) => {
         logger.info(`Added document with name: ${documentReference.id}`);
-        return { documentId: documentReference.id };
+        return {documentId: documentReference.id};
       });
   }
 );
@@ -92,7 +92,7 @@ export const readFood = functions.https.onCall(
           );
         }
         logger.info(`read document data: ${documentSnapshot.data()}`);
-        return { documentId: data.documentId, data: documentSnapshot.data() };
+        return {documentId: data.documentId, data: documentSnapshot.data()};
       });
   }
 );
