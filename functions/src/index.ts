@@ -49,7 +49,7 @@ export const postFood = functions.https.onCall(
       );
     }
 
-    const {name, expiration, location, imageString, status} = data;
+    const { name, expiration, location, imageString, status } = data;
     const db = admin.firestore();
     return await db
       .collection("foods")
@@ -62,7 +62,7 @@ export const postFood = functions.https.onCall(
       })
       .then((documentReference: { id: any }) => {
         logger.info(`Added document with name: ${documentReference.id}`);
-        return {documentId: documentReference.id};
+        return { documentId: documentReference.id };
       });
   }
 );
@@ -92,7 +92,7 @@ export const readFood = functions.https.onCall(
           );
         }
         logger.info(`read document data: ${documentSnapshot.data()}`);
-        return {documentId: data.documentId, data: documentSnapshot.data()};
+        return { documentId: data.documentId, data: documentSnapshot.data() };
       });
   }
 );
@@ -165,21 +165,95 @@ export const dangerList = functions.https.onCall(
       .get()
       .then((querySnapshot: { docs: any[] }) => {
         // 過去5日間かつ未来一週間で期限を迎える食品を返却
-        return querySnapshot.docs.filter((doc) => {
-          const expirationDate = new Date(
-            doc.data().expiration.replace(/(.*)\((.*)\)/, "$1"));
-          return expirationDate >= fiveDaysAgo &&
-            expirationDate <= oneWeekAhead;
-        }).map((doc) => {
-          return {documentId: doc.id, data: doc.data()};
-        }).sort((a, b) => {
-          // ascending order
-          const dateA = new Date(
-            a.data.expiration.replace(/(.*)\((.*)\)/, "$1"));
-          const dateB = new Date(
-            b.data.expiration.replace(/(.*)\((.*)\)/, "$1"));
-          return dateA.getTime() - dateB.getTime();
-        });
+        return querySnapshot.docs
+          .filter((doc) => {
+            const expirationDate = new Date(
+              doc.data().expiration.replace(/(.*)\((.*)\)/, "$1")
+            );
+            return (
+              expirationDate >= fiveDaysAgo && expirationDate <= oneWeekAhead
+            );
+          })
+          .map((doc) => {
+            return { documentId: doc.id, data: doc.data() };
+          })
+          .sort((a, b) => {
+            // ascending order
+            const dateA = new Date(
+              a.data.expiration.replace(/(.*)\((.*)\)/, "$1")
+            );
+            const dateB = new Date(
+              b.data.expiration.replace(/(.*)\((.*)\)/, "$1")
+            );
+            return dateA.getTime() - dateB.getTime();
+          });
       });
   }
 );
+
+export const push = functions.pubsub
+  .schedule("*/10 * * * *")
+  .timeZone("Asia/Tokyo") // タイムゾーンを設定
+  .onRun(async () => {
+    const db = admin.firestore();
+    const messaging = admin.messaging();
+
+    const now = new Date();
+    const jstOffset = 9 * 60 * 60 * 1000; // JSTオフセット（UTC+9）
+    const currentJST = new Date(now.getTime() + jstOffset);
+
+    const threeDayAhead = new Date(currentJST);
+    threeDayAhead.setDate(threeDayAhead.getDate() + 3);
+
+    const result = await db
+      .collection("tokens")
+      .doc("GjG9bTj510ra13wGsrZF")
+      .get()
+      .then(async (documentSnapshot: { exists: any; data: () => any }) => {
+        if (!documentSnapshot.exists) {
+          logger.info("No such document!");
+          throw new functions.https.HttpsError(
+            "not-found",
+            "resource not found"
+          );
+        } else {
+          const targets = await db
+            .collection("foods")
+            .get()
+            .then((querySnapshot: { docs: any[] }) => {
+              // 3日以内に期限を迎える食品を返却
+              return querySnapshot.docs
+                .filter((doc) => {
+                  const expirationDate = new Date(
+                    doc.data().expiration.replace(/(.*)\((.*)\)/, "$1")
+                  );
+                  return (
+                    expirationDate >= now && expirationDate <= threeDayAhead
+                  );
+                })
+                .map((doc) => {
+                  return { documentId: doc.id, data: doc.data() };
+                });
+            });
+
+          if (targets.length > 0) {
+            return {
+              token: documentSnapshot.data().token,
+              notification: {
+                title: "3日以内に賞味期限を迎える食品があります",
+                body: `${targets[0].data.name}などの食品がもうすぐ期限を迎えます。
+                アプリの食品一覧画面を確認しましょう！`,
+              },
+            };
+          }
+          return null;
+        }
+      });
+
+    if (result) {
+      await messaging.send(result).then((pushResult) => {
+        logger.info(`pushed:${pushResult}`);
+      });
+    }
+    return null;
+  });
