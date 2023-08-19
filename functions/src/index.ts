@@ -175,7 +175,7 @@ export const dangerList = functions.https.onCall(
             );
           })
           .map((doc) => {
-            return { documentId: doc.id, data: doc.data() };
+            return {documentId: doc.id, data: doc.data()};
           })
           .sort((a, b) => {
             // ascending order
@@ -192,7 +192,7 @@ export const dangerList = functions.https.onCall(
 );
 
 export const push = functions.pubsub
-  .schedule("*/10 * * * *")
+  .schedule("0 10 * * *")
   .timeZone("Asia/Tokyo") // タイムゾーンを設定
   .onRun(async () => {
     const db = admin.firestore();
@@ -207,7 +207,7 @@ export const push = functions.pubsub
 
     const result = await db
       .collection("tokens")
-      .doc("GjG9bTj510ra13wGsrZF")
+      .doc("MJ1FxhxQfJBAWzdPUGpq")
       .get()
       .then(async (documentSnapshot: { exists: any; data: () => any }) => {
         if (!documentSnapshot.exists) {
@@ -228,11 +228,13 @@ export const push = functions.pubsub
                     doc.data().expiration.replace(/(.*)\((.*)\)/, "$1")
                   );
                   return (
-                    expirationDate >= now && expirationDate <= threeDayAhead
+                    expirationDate >= now &&
+                    expirationDate <= threeDayAhead &&
+                    doc.data().status == "unconsume"
                   );
                 })
                 .map((doc) => {
-                  return { documentId: doc.id, data: doc.data() };
+                  return {documentId: doc.id, data: doc.data()};
                 });
             });
 
@@ -243,6 +245,14 @@ export const push = functions.pubsub
                 title: "3日以内に賞味期限を迎える食品があります",
                 body: `${targets[0].data.name}などの食品がもうすぐ期限を迎えます。
                 アプリの食品一覧画面を確認しましょう！`,
+              },
+              apns: {
+                payload: {
+                  aps: {
+                    badge: 1,
+                    sound: "default",
+                  },
+                },
               },
             };
           }
