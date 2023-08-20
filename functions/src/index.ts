@@ -67,6 +67,42 @@ export const postFood = functions.https.onCall(
   }
 );
 
+export const post2Food = functions.https.onCall(
+  async (
+    data: {
+      name: any;
+      expiration: any;
+      location: any;
+      imageString: any;
+      status: any;
+    },
+    context: any
+  ) => {
+    if (!validatePostFoodParamsSchema(data)) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "invalid paramteres"
+      );
+    }
+
+    const {name, expiration, location, imageString, status} = data;
+    const db = admin.firestore();
+    return await db
+      .collection("foods2")
+      .add({
+        name: name,
+        expiration: expiration,
+        location: location,
+        imageString: imageString,
+        status: status,
+      })
+      .then((documentReference: { id: any }) => {
+        logger.info(`Added document with name: ${documentReference.id}`);
+        return {documentId: documentReference.id};
+      });
+  }
+);
+
 export const readFood = functions.https.onCall(
   async (data: { documentId: any }, context: any) => {
     const hasDocumentId = "documentId" in data;
@@ -81,6 +117,36 @@ export const readFood = functions.https.onCall(
     const db = admin.firestore();
     return await db
       .collection("foods")
+      .doc(data.documentId)
+      .get()
+      .then((documentSnapshot: { exists: any; data: () => any }) => {
+        if (!documentSnapshot.exists) {
+          logger.info("No such document!");
+          throw new functions.https.HttpsError(
+            "not-found",
+            "resource not found"
+          );
+        }
+        logger.info(`read document data: ${documentSnapshot.data()}`);
+        return {documentId: data.documentId, data: documentSnapshot.data()};
+      });
+  }
+);
+
+export const read2Food = functions.https.onCall(
+  async (data: { documentId: any }, context: any) => {
+    const hasDocumentId = "documentId" in data;
+
+    if (!hasDocumentId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "invalid paramteres"
+      );
+    }
+
+    const db = admin.firestore();
+    return await db
+      .collection("foods2")
       .doc(data.documentId)
       .get()
       .then((documentSnapshot: { exists: any; data: () => any }) => {
@@ -146,6 +212,55 @@ export const updateFood = functions.https.onCall(
   }
 );
 
+export const update2Food = functions.https.onCall(
+  async (data: { documentId: any; status: any }, context: any) => {
+    const hasDocumentId = "documentId" in data;
+
+    if (!hasDocumentId) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "invalid paramteres"
+      );
+    }
+    const db = admin.firestore();
+
+    await db
+      .collection("foods2")
+      .doc(data.documentId)
+      .get()
+      .then((documentSnapshot: { exists: any }) => {
+        if (!documentSnapshot.exists) {
+          logger.info("No such document!");
+          throw new functions.https.HttpsError(
+            "not-found",
+            "resource not found"
+          );
+        }
+      });
+
+    try {
+      return await db
+        .collection("foods2")
+        .doc(data.documentId)
+        .update({
+          status: data.status,
+        })
+        .then((writeResult: { writeTime: { toDate: () => any } }) => {
+          logger.info(
+            `updated document, write time: ${writeResult.writeTime.toDate()}`
+          );
+          return "success";
+        });
+    } catch (e) {
+      throw new functions.https.HttpsError(
+        "unknown",
+        "failed to update data",
+        e
+      );
+    }
+  }
+);
+
 export const dangerList = functions.https.onCall(
   async (data: any, context: any) => {
     const db = admin.firestore();
@@ -191,8 +306,53 @@ export const dangerList = functions.https.onCall(
   }
 );
 
+export const dangerList2 = functions.https.onCall(
+  async (data: any, context: any) => {
+    const db = admin.firestore();
+
+    const now = new Date();
+    const jstOffset = 9 * 60 * 60 * 1000; // JSTオフセット（UTC+9）
+    const currentJST = new Date(now.getTime() + jstOffset);
+
+    // 過去5日間と未来1週間の範囲を計算
+    const fiveDaysAgo = new Date(currentJST);
+    fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+    const oneWeekAhead = new Date(currentJST);
+    oneWeekAhead.setDate(oneWeekAhead.getDate() + 7);
+
+    return await db
+      .collection("foods2")
+      .get()
+      .then((querySnapshot: { docs: any[] }) => {
+        // 過去5日間かつ未来一週間で期限を迎える食品を返却
+        return querySnapshot.docs
+          .filter((doc) => {
+            const expirationDate = new Date(
+              doc.data().expiration.replace(/(.*)\((.*)\)/, "$1")
+            );
+            return (
+              expirationDate >= fiveDaysAgo && expirationDate <= oneWeekAhead
+            );
+          })
+          .map((doc) => {
+            return {documentId: doc.id, data: doc.data()};
+          })
+          .sort((a, b) => {
+            // ascending order
+            const dateA = new Date(
+              a.data.expiration.replace(/(.*)\((.*)\)/, "$1")
+            );
+            const dateB = new Date(
+              b.data.expiration.replace(/(.*)\((.*)\)/, "$1")
+            );
+            return dateA.getTime() - dateB.getTime();
+          });
+      });
+  }
+);
+
 export const push = functions.pubsub
-  .schedule("0 10 * * *")
+  .schedule("0 10,19 * * *")
   .timeZone("Asia/Tokyo") // タイムゾーンを設定
   .onRun(async () => {
     const db = admin.firestore();
@@ -245,6 +405,83 @@ export const push = functions.pubsub
                 title: "3日以内に賞味期限を迎える食品があります",
                 body: `${targets[0].data.name}などの食品がもうすぐ期限を迎えます。
                 アプリの食品一覧画面を確認しましょう！`,
+              },
+              apns: {
+                payload: {
+                  aps: {
+                    badge: 1,
+                    sound: "default",
+                  },
+                },
+              },
+            };
+          }
+          return null;
+        }
+      });
+
+    if (result) {
+      await messaging.send(result).then((pushResult) => {
+        logger.info(`pushed:${pushResult}`);
+      });
+    }
+    return null;
+  });
+
+export const push2 = functions.pubsub
+  .schedule("0 10,17 * * *")
+  .timeZone("Asia/Tokyo") // タイムゾーンを設定
+  .onRun(async () => {
+    const db = admin.firestore();
+    const messaging = admin.messaging();
+
+    const now = new Date();
+    const jstOffset = 9 * 60 * 60 * 1000; // JSTオフセット（UTC+9）
+    const currentJST = new Date(now.getTime() + jstOffset);
+
+    const threeDayAhead = new Date(currentJST);
+    threeDayAhead.setDate(threeDayAhead.getDate() + 3);
+
+    const result = await db
+      .collection("tokens")
+      .doc("1inyktU2oP94iq2iwMDD")
+      .get()
+      .then(async (documentSnapshot: { exists: any; data: () => any }) => {
+        if (!documentSnapshot.exists) {
+          logger.info("No such document!");
+          throw new functions.https.HttpsError(
+            "not-found",
+            "resource not found"
+          );
+        } else {
+          const targets = await db
+            .collection("foods2")
+            .get()
+            .then((querySnapshot: { docs: any[] }) => {
+              // 3日以内に期限を迎える食品を返却
+              return querySnapshot.docs
+                .filter((doc) => {
+                  const expirationDate = new Date(
+                    doc.data().expiration.replace(/(.*)\((.*)\)/, "$1")
+                  );
+                  return (
+                    expirationDate >= now &&
+                    expirationDate <= threeDayAhead &&
+                    doc.data().status == "unconsume"
+                  );
+                })
+                .map((doc) => {
+                  return {documentId: doc.id, data: doc.data()};
+                });
+            });
+
+          if (targets.length > 0) {
+            return {
+              token: documentSnapshot.data().token,
+              notification: {
+                title: "3日以内に賞味期限を迎える食品があります",
+                body: `${targets[0].data.name}などの食品がもうすぐ期限を迎えます。
+              アプリの食品一覧画面を確認しましょう！`,
               },
               apns: {
                 payload: {
