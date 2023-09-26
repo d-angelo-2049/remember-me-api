@@ -282,11 +282,8 @@ export const dangerList = functions.https.onCall(
         // 過去5日間かつ未来一週間で期限を迎える食品を返却
         return querySnapshot.docs
           .filter((doc) => {
-            const expirationDate = new Date(
-              doc.data().expiration.replace(/(.*)\((.*)\)/, "$1")
-            );
             return (
-              expirationDate >= fiveDaysAgo && expirationDate <= oneWeekAhead
+              doc.data().status == "unconsume"
             );
           })
           .map((doc) => {
